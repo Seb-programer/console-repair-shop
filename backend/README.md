@@ -27,8 +27,17 @@ Usuarios del seed: `admin / Admin123*`, `tecnico / Tecnico123*`, `operario / Ope
 | FRONTEND_DIST | `../frontend/dist` | Carpeta de la web compilada (normalmente no hace falta cambiarla) |
 | CORS_ORIGIN | http://localhost:5173 | Orígenes permitidos (separados por coma) |
 | TRUST_PROXY | vacío (desarrollo) / `loopback` (producción) | Valor de `trust proxy` de Express. Normalmente no se define: en producción se usa `loopback` (cloudflared corre en el mismo PC). |
+| UPLOADS_DIR | `uploads` (= `backend/uploads`) | Carpeta de archivos subidos (fotos, logo, galería). Ruta absoluta o relativa a `backend/` (no al directorio actual). Se crea al arrancar si no existe. La usan multer, el estático `/uploads`, la validación de contenido y el borrado. En BD las rutas siguen siendo `/uploads/<archivo>`. |
 
 Las variables que pasa el lanzador (`produccion.cmd`, `iniciar.bat`) tienen prioridad: dotenv no sobrescribe variables ya definidas, así que el `PORT=3001` del `.env` no afecta al modo producción.
+
+Lo mismo sirve para levantar una **segunda instancia** (p. ej. una demo sin datos reales) con su propia base de datos y su propia carpeta de archivos, sin tocar `.env` (PowerShell):
+
+```powershell
+$env:DB_NAME='consolas_demo'; $env:UPLOADS_DIR='uploads-demo'; $env:PORT='5180'; $env:SERVIR_FRONTEND='1'; node src/server.js
+```
+
+Al arrancar, el servidor muestra la base de datos y la carpeta de subidas en uso.
 
 ## Scripts
 - `npm start` — inicia la API (modo desarrollo salvo que el entorno diga otra cosa).
@@ -121,6 +130,6 @@ La conexión activa el modo estricto de SQL en cada sesión (`STRICT_TRANS_TABLE
 
 Archivos de galería: el contenido se comprueba por sus bytes (MP4: `ftyp` en los bytes 4-7; WEBM: `1A 45 DF A3`; imágenes: JPG/PNG/WEBP), no por la extensión. Un archivo falso renombrado a `.mp4` → 400 y no queda en disco.
 
-Fotos: el campo puede llamarse `fotos` o `fotos[]`; solo JPG/PNG/WEBP, máx 5 MB c/u y 10 por petición. Se guardan en `uploads/` y se sirven en `/uploads/<archivo>` (en BD: `/uploads/<archivo>`). Si una petición falla, los archivos subidos se borran.
+Fotos: el campo puede llamarse `fotos` o `fotos[]`; solo JPG/PNG/WEBP, máx 5 MB c/u y 10 por petición. Se guardan en `uploads/` (o en `UPLOADS_DIR`) y se sirven en `/uploads/<archivo>` (en BD: `/uploads/<archivo>`). Si una petición falla, los archivos subidos se borran.
 
 Reglas: precio y total de la venta se calculan en el servidor con el precio actual (transacción + `SELECT … FOR UPDATE`); si un técnico cambia el estado o registra un procedimiento queda asignado como `tecnico_id`; al pasar a `finalizado` se fija `fecha_finalizacion` y se limpia al volver a otro estado.

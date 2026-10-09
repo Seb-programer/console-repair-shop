@@ -3,4 +3,6 @@ dist/
 backend/.env
 backend/uploads/*
 !backend/uploads/.gitkeep
+# Carpetas de subidas de otras instancias (p. ej. UPLOADS_DIR=uploads-demo)
+backend/uploads-*/
 database/respaldo/
