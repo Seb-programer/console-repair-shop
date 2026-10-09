@@ -1,0 +1,103 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (API + pruebas con MariaDB)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      mariadb:
+        image: mariadb:10.4
+        env:
+          # Credenciales solo para el contenedor efimero de CI (no son secretos).
+          MYSQL_ROOT_PASSWORD: ci_root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pci_root --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Crear la base de datos (schema.sql + seed.sql)
+        working-directory: .
+        run: |
+          # Se usa el cliente del propio contenedor MariaDB; schema.sql crea y usa consolas_db.
+          for f in database/schema.sql database/seed.sql; do
+            echo "Importando $f"
+            docker exec -i "${{ job.services.mariadb.id }}" \
+              mysql -uroot -pci_root --default-character-set=utf8mb4 < "$f"
+          done
+          docker exec "${{ job.services.mariadb.id }}" \
+            mysql -uroot -pci_root -e "SELECT COUNT(*) AS usuarios FROM consolas_db.usuarios"
+
+      - name: Crear backend/.env de CI a partir de .env.example
+        run: |
+          JWT_SECRET="$(openssl rand -hex 32)"
+          echo "::add-mask::$JWT_SECRET"
+          sed \
+            -e 's/^DB_HOST=.*/DB_HOST=127.0.0.1/' \
+            -e 's/^DB_PORT=.*/DB_PORT=3306/' \
+            -e 's/^DB_USER=.*/DB_USER=root/' \
+            -e 's/^DB_PASSWORD=.*/DB_PASSWORD=ci_root/' \
+            -e 's/^DB_NAME=.*/DB_NAME=consolas_db/' \
+            -e "s/^JWT_SECRET=.*/JWT_SECRET=$JWT_SECRET/" \
+            .env.example > .env
+          grep -v '^JWT_SECRET=' .env
+
+      - run: npm ci
+
+      - name: Pruebas (unitarias + integracion contra MariaDB)
+        run: npm test
+        env:
+          # Hace que las pruebas de integracion FALLEN (en vez de saltarse) si no hay BD.
+          REQUIERE_BD: '1'
+
+  frontend:
+    name: Frontend (lint + build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
